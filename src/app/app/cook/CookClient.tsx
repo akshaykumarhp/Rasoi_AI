@@ -1,12 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useSpeech } from "@/lib/useSpeech";
 import { matchIntent } from "@/lib/intents";
-import type { Profile, Recipe } from "@/lib/types";
+import {
+  flattenRecipeSteps,
+  PHASE_LABELS,
+  RECIPE_PHASES,
+  type PhaseStep,
+  type Profile,
+  type Recipe,
+} from "@/lib/types";
 
 type Stage = "input" | "loading" | "recipe" | "cooking";
+
+function announce(step: PhaseStep, index: number, isFirstOfPhase: boolean): string {
+  const prefix = isFirstOfPhase ? `${PHASE_LABELS[step.phase]}. ` : "";
+  return `${prefix}Step ${index + 1}. ${step.text}`;
+}
 
 export default function CookClient({ profile }: { profile: Profile }) {
   const supabase = createClient();
@@ -20,14 +32,21 @@ export default function CookClient({ profile }: { profile: Profile }) {
   const [error, setError] = useState("");
   const [recording, setRecording] = useState(false);
 
+  // Every recipe (from any provider) is normalized to the same 5-part shape,
+  // so cooking navigation always works against one flat, phase-tagged list.
+  const flatSteps = useMemo(
+    () => (recipe ? flattenRecipeSteps(recipe) : []),
+    [recipe],
+  );
+
   const stepRef = useRef(0);
-  const recipeRef = useRef<Recipe | null>(null);
+  const flatStepsRef = useRef<PhaseStep[]>([]);
   useEffect(() => {
     stepRef.current = stepIndex;
   }, [stepIndex]);
   useEffect(() => {
-    recipeRef.current = recipe;
-  }, [recipe]);
+    flatStepsRef.current = flatSteps;
+  }, [flatSteps]);
 
   // Prefill + auto-generate when arriving from the planner (?q=Dish name).
   useEffect(() => {
@@ -66,7 +85,12 @@ export default function CookClient({ profile }: { profile: Profile }) {
           servings: r.servings,
           cuisine: r.cuisine,
           ingredients: r.ingredients,
-          steps: r.steps,
+          steps: {
+            preparation: r.preparation,
+            cooking: r.cooking,
+            garnishing: r.garnishing,
+            postCooking: r.postCooking,
+          },
           notes: r.notes ?? null,
         })
         .then(() => {});
@@ -94,10 +118,8 @@ export default function CookClient({ profile }: { profile: Profile }) {
   }
 
   // ---------- cooking navigation ----------
-  const steps = recipe?.steps ?? [];
-
   const goNext = useCallback(
-    () => setStepIndex((i) => Math.min(i + 1, (recipeRef.current?.steps.length ?? 1) - 1)),
+    () => setStepIndex((i) => Math.min(i + 1, (flatStepsRef.current.length ?? 1) - 1)),
     [],
   );
   const goBack = useCallback(() => setStepIndex((i) => Math.max(i - 1, 0)), []);
@@ -112,10 +134,16 @@ export default function CookClient({ profile }: { profile: Profile }) {
     setStage("recipe");
   }, [speech]);
 
+  function isFirstOfPhase(steps: PhaseStep[], i: number): boolean {
+    return i === 0 || steps[i - 1]?.phase !== steps[i]?.phase;
+  }
+
   // Speak the current step whenever it changes during cooking.
   useEffect(() => {
-    if (stage === "cooking" && voiceOn && recipe) {
-      speech.speak(`Step ${stepIndex + 1}. ${recipe.steps[stepIndex]}`);
+    if (stage === "cooking" && voiceOn && flatSteps[stepIndex]) {
+      speech.speak(
+        announce(flatSteps[stepIndex], stepIndex, isFirstOfPhase(flatSteps, stepIndex)),
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, stepIndex, voiceOn]);
@@ -128,10 +156,10 @@ export default function CookClient({ profile }: { profile: Profile }) {
       if (intent === "next") goNext();
       else if (intent === "back") goBack();
       else if (intent === "stop") stopCooking();
-      else if (intent === "repeat" && recipeRef.current) {
-        speech.speak(
-          `Step ${stepRef.current + 1}. ${recipeRef.current.steps[stepRef.current]}`,
-        );
+      else if (intent === "repeat") {
+        const steps = flatStepsRef.current;
+        const i = stepRef.current;
+        if (steps[i]) speech.speak(announce(steps[i], i, isFirstOfPhase(steps, i)));
       }
     });
     return () => speech.stopContinuous();
@@ -150,8 +178,10 @@ export default function CookClient({ profile }: { profile: Profile }) {
       if (intent === "next") goNext();
       else if (intent === "back") goBack();
       else if (intent === "stop") stopCooking();
-      else if (intent === "repeat" && recipe) {
-        speech.speak(`Step ${stepIndex + 1}. ${recipe.steps[stepIndex]}`);
+      else if (intent === "repeat" && flatSteps[stepIndex]) {
+        speech.speak(
+          announce(flatSteps[stepIndex], stepIndex, isFirstOfPhase(flatSteps, stepIndex)),
+        );
       }
     }
   }
@@ -168,8 +198,9 @@ export default function CookClient({ profile }: { profile: Profile }) {
     );
   }
 
-  if (stage === "cooking" && recipe) {
-    const isLast = stepIndex === steps.length - 1;
+  if (stage === "cooking" && recipe && flatSteps.length > 0) {
+    const isLast = stepIndex === flatSteps.length - 1;
+    const current = flatSteps[stepIndex];
     return (
       <div>
         <div className="mb-4 flex items-center justify-between">
@@ -184,16 +215,19 @@ export default function CookClient({ profile }: { profile: Profile }) {
         <div className="mb-3 h-2 w-full overflow-hidden rounded-full bg-stone-100 dark:bg-stone-800">
           <div
             className="h-full bg-brand-500 transition-all"
-            style={{ width: `${((stepIndex + 1) / steps.length) * 100}%` }}
+            style={{ width: `${((stepIndex + 1) / flatSteps.length) * 100}%` }}
           />
         </div>
         <p className="mb-4 text-sm font-medium text-stone-400">
-          Step {stepIndex + 1} of {steps.length}
+          Step {stepIndex + 1} of {flatSteps.length}
         </p>
 
         <div className="card min-h-[40vh] items-center justify-center text-center">
+          <span className="mb-3 inline-block self-center rounded-full bg-brand-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-brand-700">
+            {PHASE_LABELS[current.phase]}
+          </span>
           <p className="text-2xl leading-relaxed text-stone-900 dark:text-stone-50 sm:text-3xl">
-            {steps[stepIndex]}
+            {current.text}
           </p>
         </div>
 
@@ -202,7 +236,9 @@ export default function CookClient({ profile }: { profile: Profile }) {
             ⬅ Back
           </button>
           <button
-            onClick={() => recipe && speech.speak(`Step ${stepIndex + 1}. ${steps[stepIndex]}`)}
+            onClick={() =>
+              speech.speak(announce(current, stepIndex, isFirstOfPhase(flatSteps, stepIndex)))
+            }
             className="btn-secondary"
           >
             🔊 Repeat
@@ -270,17 +306,27 @@ export default function CookClient({ profile }: { profile: Profile }) {
             ))}
           </ul>
 
-          <h2 className="mt-6 font-bold text-stone-800 dark:text-stone-200">Steps</h2>
-          <ol className="mt-2 space-y-2">
-            {recipe.steps.map((s, i) => (
-              <li key={i} className="flex gap-3 text-stone-700 dark:text-stone-300">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-bold text-brand-700">
-                  {i + 1}
-                </span>
-                <span>{s}</span>
-              </li>
-            ))}
-          </ol>
+          {RECIPE_PHASES.map((phase) => {
+            const items = recipe[phase];
+            if (!items?.length) return null;
+            return (
+              <div key={phase}>
+                <h2 className="mt-6 font-bold text-stone-800 dark:text-stone-200">
+                  {PHASE_LABELS[phase]}
+                </h2>
+                <ol className="mt-2 space-y-2">
+                  {items.map((s, i) => (
+                    <li key={i} className="flex gap-3 text-stone-700 dark:text-stone-300">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-bold text-brand-700">
+                        {i + 1}
+                      </span>
+                      <span>{s}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            );
+          })}
 
           {recipe.notes && (
             <p className="mt-4 rounded-2xl bg-brand-50 p-3 text-sm text-brand-800">

@@ -8,7 +8,8 @@ entirely on **free-tier** infrastructure.
 - **Login + profile** — passwordless (Google or email magic link); personalize
   language, units (metric/imperial/Indian), cuisines, diet, health flags, allergies.
 - **What's in the fridge** — type or speak your ingredients, get a recipe tailored
-  to your profile.
+  to your profile. Every recipe — no matter which free model answers — follows the
+  same structure: ingredients → preparation → cooking → garnishing → post-cooking.
 - **Hands-free cooking** — steps read aloud; say "next / back / repeat / stop"
   (native on Android/Chrome, push-to-talk on iOS).
 - **Meal planner** — weekly calendar with Gemini-powered auto-planning; tap any

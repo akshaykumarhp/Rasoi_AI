@@ -273,6 +273,22 @@ const UNIT_GUIDANCE: Record<Profile["units"], string> = {
 };
 
 /**
+ * Every recipe — regardless of which provider answered — must follow this
+ * exact 5-part structure, in this order. Only Gemini gets schema enforcement;
+ * the other providers only see this as an instruction, so it's spelled out
+ * explicitly and reinforced by normalizeRecipe() below as a safety net.
+ */
+const RECIPE_STRUCTURE_RULES =
+  "Structure every recipe into exactly these parts, in this order, and use " +
+  "these exact JSON keys:\n" +
+  "1. ingredients — full list with quantity and unit for each item.\n" +
+  "2. preparation — pre-cooking prep: washing, chopping, marinating, preheating, mise en place.\n" +
+  "3. cooking — the actual cooking steps, in order.\n" +
+  "4. garnishing — garnish or plating steps. Use an empty array if the dish has no garnish.\n" +
+  "5. postCooking — resting, serving, or storage tips. Use an empty array if not applicable.\n" +
+  "Never merge these into one flat step list. Each array holds short, clear, one-action-at-a-time instructions.";
+
+/**
  * Builds the system instruction for Gemini from the user's profile so every
  * response is personalized (language, units, cuisine, diet, health).
  */
@@ -309,7 +325,11 @@ export function buildSystemInstruction(profile: Partial<Profile>): string {
   return lines.join("\n");
 }
 
-/** JSON schema Gemini must follow when returning a recipe. */
+/**
+ * JSON schema every recipe must follow, regardless of which provider answers.
+ * Steps are split into fixed phases so the UI (and voice cooking loop) can
+ * render/announce them the same way no matter which free model responded.
+ */
 export const RECIPE_SCHEMA: ResponseSchema = {
   type: SchemaType.OBJECT,
   properties: {
@@ -328,11 +348,74 @@ export const RECIPE_SCHEMA: ResponseSchema = {
         required: ["item", "quantity", "unit"],
       },
     },
-    steps: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+    preparation: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+    cooking: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+    garnishing: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+    postCooking: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
     notes: { type: SchemaType.STRING },
   },
-  required: ["title", "servings", "cuisine", "ingredients", "steps"],
+  required: [
+    "title",
+    "servings",
+    "cuisine",
+    "ingredients",
+    "preparation",
+    "cooking",
+    "garnishing",
+    "postCooking",
+  ],
 };
+
+/** Coerce a string field, defaulting when missing/wrong type. */
+function str(v: unknown, fallback = ""): string {
+  return typeof v === "string" && v.trim() ? v : fallback;
+}
+
+/** Coerce a phase into a clean string array, tolerating odd shapes from weaker models. */
+function stepArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((s) => (typeof s === "string" ? s : typeof s === "object" && s && "text" in s ? String((s as { text: unknown }).text) : ""))
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Normalizes whatever a provider returns into the standard 5-part recipe
+ * shape. Gemini's schema enforces this already; the fallback providers
+ * (Groq/OpenRouter/GitHub/Ollama) only get a text instruction, so this is
+ * the safety net that guarantees every response looks identical to the UI.
+ */
+function normalizeRecipe(raw: unknown): unknown {
+  const r = (raw ?? {}) as Record<string, unknown>;
+
+  const ingredients = Array.isArray(r.ingredients)
+    ? r.ingredients.map((i) => {
+        const ing = (i ?? {}) as Record<string, unknown>;
+        return {
+          item: str(ing.item, "Ingredient"),
+          quantity: str(ing.quantity, ""),
+          unit: str(ing.unit, ""),
+        };
+      })
+    : [];
+
+  // Some weaker models still return a flat "steps" array despite instructions —
+  // treat that whole list as the "cooking" phase rather than losing the data.
+  const legacySteps = stepArray(r.steps);
+
+  return {
+    title: str(r.title, "Recipe"),
+    servings: typeof r.servings === "number" && r.servings > 0 ? r.servings : 2,
+    cuisine: str(r.cuisine, "International"),
+    ingredients,
+    preparation: stepArray(r.preparation),
+    cooking: stepArray(r.cooking).length ? stepArray(r.cooking) : legacySteps,
+    garnishing: stepArray(r.garnishing),
+    postCooking: stepArray(r.postCooking),
+    notes: typeof r.notes === "string" ? r.notes : undefined,
+  };
+}
 
 export interface RecipeRequest {
   profile: Partial<Profile>;
@@ -340,17 +423,19 @@ export interface RecipeRequest {
   prompt: string;
 }
 
-/** Generates a single structured recipe personalized to the profile. */
+/** Generates a single structured recipe, normalized to the same shape for every provider. */
 export async function generateRecipe({ profile, prompt }: RecipeRequest) {
-  return generateJSONWithFallback({
-    system: buildSystemInstruction(profile),
+  const raw = await generateJSONWithFallback({
+    system: `${buildSystemInstruction(profile)}\n${RECIPE_STRUCTURE_RULES}`,
     prompt,
     schema: RECIPE_SCHEMA,
     jsonHint:
       "Shape: {title:string, servings:number, cuisine:string, " +
       "ingredients:[{item:string, quantity:string, unit:string}], " +
-      "steps:[string], notes?:string}.",
+      "preparation:[string], cooking:[string], garnishing:[string], " +
+      "postCooking:[string], notes?:string}.",
   });
+  return normalizeRecipe(raw);
 }
 
 /** JSON schema for an auto-generated meal plan. */

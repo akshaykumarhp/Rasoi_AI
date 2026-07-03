@@ -34,6 +34,7 @@ export interface Ingredient {
   unit: string;
 }
 
+/** Every recipe, from any provider, follows this same 5-part structure. */
 export interface Recipe {
   id?: string;
   user_id?: string;
@@ -41,9 +42,42 @@ export interface Recipe {
   servings: number;
   cuisine: string;
   ingredients: Ingredient[];
-  steps: string[];
+  preparation: string[]; // pre-cooking: washing, chopping, marinating…
+  cooking: string[]; // the actual cooking steps
+  garnishing: string[]; // garnish/plating — may be empty
+  postCooking: string[]; // resting, serving, storage tips — may be empty
   notes?: string;
   created_at?: string;
+}
+
+export type RecipePhase = "preparation" | "cooking" | "garnishing" | "postCooking";
+
+export const RECIPE_PHASES: RecipePhase[] = [
+  "preparation",
+  "cooking",
+  "garnishing",
+  "postCooking",
+];
+
+export const PHASE_LABELS: Record<RecipePhase, string> = {
+  preparation: "Preparation",
+  cooking: "Cooking",
+  garnishing: "Garnishing",
+  postCooking: "Finishing touches",
+};
+
+export interface PhaseStep {
+  phase: RecipePhase;
+  text: string;
+}
+
+/** Flattens a recipe's phases into one ordered list for the guided-cooking loop. */
+export function flattenRecipeSteps(recipe: Recipe): PhaseStep[] {
+  const out: PhaseStep[] = [];
+  for (const phase of RECIPE_PHASES) {
+    for (const text of recipe[phase] ?? []) out.push({ phase, text });
+  }
+  return out;
 }
 
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
