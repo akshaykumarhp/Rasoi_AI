@@ -16,8 +16,24 @@ entirely on **free-tier** infrastructure.
 
 ## Stack
 - **Next.js 15** (App Router) + **React 19** + **Tailwind CSS**
-- **Google Gemini 2.5 Flash** (text + audio) for recipes, plans, and transcription
+- **Google Gemini** (text + audio) for recipes, plans, and transcription
 - **Supabase** — auth + Postgres (row-level security)
+
+## Staying within the free tier
+Each free Gemini model has its own daily request quota, so the app **rotates
+through all of them** (`gemini-2.5-flash` → `-flash-lite` → `2.0-flash` → … ),
+skipping any that are rate-limited. This multiplies the effective requests-per-day
+at no cost. If *every* Gemini model is exhausted, it falls back to a **local
+Ollama** model (offline, unlimited):
+
+```bash
+# optional offline fallback
+ollama pull llama3.1     # then just keep `ollama serve` running
+```
+
+No env changes needed — the app auto-detects Ollama at `localhost:11434`. Customize
+the rotation with `GEMINI_MODELS` or the fallback with `OLLAMA_MODEL` (see
+`.env.local.example`).
 
 ## Getting started
 ```bash

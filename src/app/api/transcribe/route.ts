@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGenAI } from "@/lib/gemini";
+import { transcribeAudio } from "@/lib/gemini";
 
 export const runtime = "nodejs";
 
@@ -27,16 +27,7 @@ export async function POST(req: NextRequest) {
   const mimeType = audio.type || "audio/webm";
 
   try {
-    const model = getGenAI().getGenerativeModel({ model: "gemini-2.5-flash" });
-    const result = await model.generateContent([
-      {
-        text:
-          `Transcribe this spoken audio to plain text in its original language ` +
-          `(expected language code: ${language}). Return ONLY the transcript, no quotes or commentary.`,
-      },
-      { inlineData: { mimeType, data: base64 } },
-    ]);
-    const text = result.response.text().trim();
+    const text = await transcribeAudio(base64, mimeType, language);
     return NextResponse.json({ text });
   } catch (err) {
     console.error("transcription failed", err);

@@ -5,12 +5,148 @@ import {
 } from "@google/generative-ai";
 import type { Profile } from "./types";
 
-const MODEL = "gemini-2.5-flash";
-
 export function getGenAI() {
   const key = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!key) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not set");
   return new GoogleGenerativeAI(key);
+}
+
+/**
+ * Free-tier Gemini models to rotate through. Each model has its OWN daily
+ * request quota, so trying them in turn multiplies the effective RPD. Ordered
+ * best-quality first. Override with GEMINI_MODELS="a,b,c" if you like.
+ */
+export const TEXT_MODELS: string[] = (
+  process.env.GEMINI_MODELS ??
+  [
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
+  ].join(",")
+)
+  .split(",")
+  .map((m) => m.trim())
+  .filter(Boolean);
+
+/** Audio-capable subset (used for speech transcription). */
+export const AUDIO_MODELS: string[] = [
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.0-flash",
+];
+
+/** True when an error is a rate-limit / quota-exhausted condition. */
+function isQuotaError(e: unknown): boolean {
+  const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
+  return (
+    msg.includes("429") ||
+    msg.includes("quota") ||
+    msg.includes("resource_exhausted") ||
+    msg.includes("rate limit") ||
+    msg.includes("exceeded")
+  );
+}
+
+/** Local Ollama fallback (structured JSON) when all Gemini models are spent. */
+async function callOllamaJSON(system: string, user: string): Promise<unknown> {
+  const url = process.env.OLLAMA_URL ?? "http://localhost:11434";
+  const model = process.env.OLLAMA_MODEL ?? "llama3.1";
+  const res = await fetch(`${url}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      format: "json",
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Ollama request failed (${res.status})`);
+  }
+  const data = (await res.json()) as { message?: { content?: string } };
+  return JSON.parse(data.message?.content ?? "{}");
+}
+
+/**
+ * Generates structured JSON: tries each free Gemini model in turn, skipping
+ * ones that are rate-limited, and finally falls back to local Ollama.
+ */
+async function generateJSONWithFallback(opts: {
+  system: string;
+  prompt: string;
+  schema: ResponseSchema;
+  jsonHint: string;
+}): Promise<unknown> {
+  const genAI = getGenAI();
+  let lastErr: unknown;
+
+  for (const model of TEXT_MODELS) {
+    try {
+      const m = genAI.getGenerativeModel({
+        model,
+        systemInstruction: opts.system,
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: opts.schema,
+        },
+      });
+      const result = await m.generateContent(opts.prompt);
+      return JSON.parse(result.response.text());
+    } catch (e) {
+      lastErr = e;
+      if (isQuotaError(e)) {
+        console.warn(`[llm] ${model} rate-limited — trying next model`);
+        continue;
+      }
+      throw e; // a real error (bad request, parse) — don't mask it
+    }
+  }
+
+  // Every Gemini model is exhausted — try local Ollama.
+  console.warn("[llm] all Gemini models exhausted — falling back to Ollama");
+  try {
+    return await callOllamaJSON(
+      opts.system,
+      `${opts.prompt}\n\nReturn ONLY valid JSON. ${opts.jsonHint}`,
+    );
+  } catch (ollamaErr) {
+    console.error("[llm] Ollama fallback failed", ollamaErr);
+    throw lastErr ?? ollamaErr;
+  }
+}
+
+/** Transcribes audio, rotating through audio-capable Gemini models. */
+export async function transcribeAudio(
+  base64: string,
+  mimeType: string,
+  language: string,
+): Promise<string> {
+  const genAI = getGenAI();
+  for (const model of AUDIO_MODELS) {
+    try {
+      const m = genAI.getGenerativeModel({ model });
+      const result = await m.generateContent([
+        {
+          text:
+            `Transcribe this spoken audio to plain text in its original ` +
+            `language (expected code: ${language}). Return ONLY the transcript.`,
+        },
+        { inlineData: { mimeType, data: base64 } },
+      ]);
+      return result.response.text().trim();
+    } catch (e) {
+      console.warn(`[llm] transcription via ${model} failed — trying next`);
+      // Audio support varies by model; move on regardless of error type.
+    }
+  }
+  throw new Error("All Gemini models are exhausted for transcription today.");
 }
 
 const UNIT_GUIDANCE: Record<Profile["units"], string> = {
@@ -90,17 +226,15 @@ export interface RecipeRequest {
 
 /** Generates a single structured recipe personalized to the profile. */
 export async function generateRecipe({ profile, prompt }: RecipeRequest) {
-  const model = getGenAI().getGenerativeModel({
-    model: MODEL,
-    systemInstruction: buildSystemInstruction(profile),
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: RECIPE_SCHEMA,
-    },
+  return generateJSONWithFallback({
+    system: buildSystemInstruction(profile),
+    prompt,
+    schema: RECIPE_SCHEMA,
+    jsonHint:
+      "Shape: {title:string, servings:number, cuisine:string, " +
+      "ingredients:[{item:string, quantity:string, unit:string}], " +
+      "steps:[string], notes?:string}.",
   });
-
-  const result = await model.generateContent(prompt);
-  return JSON.parse(result.response.text());
 }
 
 /** JSON schema for an auto-generated meal plan. */
@@ -139,22 +273,19 @@ export async function generateMealPlan({
   days: number;
   mealTypes: string[];
 }): Promise<MealPlanSlot[]> {
-  const model = getGenAI().getGenerativeModel({
-    model: MODEL,
-    systemInstruction: buildSystemInstruction(profile),
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: MEAL_PLAN_SCHEMA,
-    },
-  });
-
   const prompt =
     `Create a balanced ${days}-day meal plan covering these meals each day: ` +
     `${mealTypes.join(", ")}. Vary cuisines, proteins, and vegetables across the ` +
     `days so nothing repeats. Keep each dish home-cookable. Use dayOffset 0 for ` +
     `the first day up to ${days - 1} for the last. Return only dish titles.`;
 
-  const result = await model.generateContent(prompt);
-  const parsed = JSON.parse(result.response.text());
-  return (parsed.meals ?? []) as MealPlanSlot[];
+  const parsed = (await generateJSONWithFallback({
+    system: buildSystemInstruction(profile),
+    prompt,
+    schema: MEAL_PLAN_SCHEMA,
+    jsonHint:
+      "Shape: {meals:[{dayOffset:number, mealType:string, title:string}]}.",
+  })) as { meals?: MealPlanSlot[] };
+
+  return parsed.meals ?? [];
 }

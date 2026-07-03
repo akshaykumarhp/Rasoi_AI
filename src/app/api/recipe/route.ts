@@ -48,7 +48,11 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("recipe generation failed", err);
     return NextResponse.json(
-      { error: "Could not generate a recipe right now. Please try again." },
+      {
+        error:
+          "All free AI models are busy or at their daily limit right now. " +
+          "Please try again later, or run Ollama locally for an offline fallback.",
+      },
       { status: 502 },
     );
   }
