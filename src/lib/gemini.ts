@@ -97,7 +97,7 @@ function openAIProviders(): OpenAIProvider[] {
             (process.env.GITHUB_MODELS_URL ??
               "https://models.github.ai/inference") + "/chat/completions",
           apiKey: process.env.GITHUB_MODELS_TOKEN,
-          model: process.env.GITHUB_MODEL ?? "openai/gpt-4o-mini",
+          model: process.env.GITHUB_MODEL ?? "openai/gpt-4.1-mini",
         }
       : null,
   ];
