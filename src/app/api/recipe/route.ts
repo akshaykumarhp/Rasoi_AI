@@ -47,13 +47,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ recipe });
   } catch (err) {
     console.error("recipe generation failed", err);
-    return NextResponse.json(
-      {
-        error:
-          "All free AI models are busy or at their daily limit right now. " +
-          "Please try again later, or run Ollama locally for an offline fallback.",
-      },
-      { status: 502 },
-    );
+    const msg =
+      err instanceof Error && err.message.includes("no_access")
+        ? "GitHub Models returned no_access — check your token permissions."
+        : err instanceof Error && err.message.includes("429")
+          ? "Rate limit hit across all providers. Wait a minute and try again, or run Ollama locally."
+          : "All free AI models are busy right now. Try again in a few minutes, or enable Ollama for offline use.";
+    return NextResponse.json({ error: msg }, { status: 502 });
   }
 }

@@ -173,9 +173,15 @@ async function generateJSONWithFallback(opts: {
 }): Promise<unknown> {
   const genAI = getGenAI();
   let lastErr: unknown;
+  const providers = openAIProviders();
+
+  console.log(
+    `[llm] starting cascade: ${TEXT_MODELS.length} Gemini models + ${providers.map((p) => p.name).join("/")} + Ollama`,
+  );
 
   for (const model of TEXT_MODELS) {
     try {
+      console.log(`[llm] trying Gemini ${model}…`);
       const m = genAI.getGenerativeModel({
         model,
         systemInstruction: opts.system,
@@ -185,33 +191,42 @@ async function generateJSONWithFallback(opts: {
         },
       });
       const result = await m.generateContent(opts.prompt);
+      console.log(`[llm] ✓ ${model} succeeded`);
       return JSON.parse(result.response.text());
     } catch (e) {
       lastErr = e;
       if (isQuotaError(e)) {
-        console.warn(`[llm] ${model} rate-limited — trying next model`);
+        console.warn(`[llm] ${model} rate-limited — trying next`);
         continue;
       }
-      throw e; // a real error (bad request, parse) — don't mask it
+      console.error(`[llm] ${model} failed (non-quota error)`, e);
+      throw e; // real error, don't mask it
     }
   }
 
-  // Gemini exhausted — try free OpenAI-compatible providers (Groq, OpenRouter, GitHub).
+  // Gemini exhausted — try free OpenAI-compatible providers.
   const userWithHint = `${opts.prompt}\n\nReturn ONLY valid JSON. ${opts.jsonHint}`;
-  for (const provider of openAIProviders()) {
+  if (providers.length === 0) {
+    console.warn("[llm] no OpenAI-compatible providers configured");
+  }
+  for (const provider of providers) {
     try {
-      console.warn(`[llm] Gemini exhausted — trying ${provider.name}`);
-      return await callOpenAIJSON(provider, opts.system, userWithHint);
+      console.log(`[llm] trying ${provider.name}…`);
+      const result = await callOpenAIJSON(provider, opts.system, userWithHint);
+      console.log(`[llm] ✓ ${provider.name} succeeded`);
+      return result;
     } catch (e) {
       lastErr = e;
-      console.warn(`[llm] ${provider.name} failed — trying next`);
+      console.warn(`[llm] ${provider.name} failed:`, (e as Error)?.message);
     }
   }
 
-  // Finally, local Ollama (offline, unlimited).
-  console.warn("[llm] all cloud providers exhausted — falling back to Ollama");
+  // Finally, local Ollama.
+  console.warn("[llm] all cloud providers exhausted — trying local Ollama…");
   try {
-    return await callOllamaJSON(opts.system, userWithHint);
+    const result = await callOllamaJSON(opts.system, userWithHint);
+    console.log("[llm] ✓ Ollama succeeded");
+    return result;
   } catch (ollamaErr) {
     console.error("[llm] Ollama fallback failed", ollamaErr);
     throw lastErr ?? ollamaErr;
