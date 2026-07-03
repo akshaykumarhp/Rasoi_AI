@@ -86,9 +86,7 @@ function openAIProviders(): OpenAIProvider[] {
           name: "OpenRouter",
           url: "https://openrouter.ai/api/v1/chat/completions",
           apiKey: process.env.OPENROUTER_API_KEY,
-          model:
-            process.env.OPENROUTER_MODEL ??
-            "meta-llama/llama-3.3-70b-instruct:free",
+          model: process.env.OPENROUTER_MODEL ?? "openai/gpt-oss-20b:free",
           extraHeaders: { "X-Title": "Rasoi Assistant" },
         }
       : null,
