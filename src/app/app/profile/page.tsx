@@ -30,10 +30,11 @@ export default async function ProfilePage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-extrabold text-stone-900 dark:text-stone-50">
+      <span className="eyebrow">Preferences</span>
+      <h1 className="mt-3 font-heading text-3xl font-bold text-foreground sm:text-4xl">
         Your preferences
       </h1>
-      <p className="mt-2 text-stone-500 dark:text-stone-400">
+      <p className="mt-2 text-muted-foreground">
         We use these to personalize every recipe — units, cuisine, diet, and more.
       </p>
       <div className="mt-8">

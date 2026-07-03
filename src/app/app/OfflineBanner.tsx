@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { WifiOff } from "lucide-react";
 
 /** Shows a friendly banner when the device loses its internet connection. */
 export default function OfflineBanner() {
@@ -20,9 +21,9 @@ export default function OfflineBanner() {
   if (!offline) return null;
 
   return (
-    <div className="bg-amber-500 px-4 py-2 text-center text-sm font-medium text-white">
-      📶 You&rsquo;re offline. Recipes and planning need internet — your saved
-      preferences still work.
+    <div className="flex items-center justify-center gap-2 bg-primary px-4 py-2 text-center text-sm font-semibold text-primary-foreground">
+      <WifiOff className="h-4 w-4" />
+      You&rsquo;re offline — recipes need internet. Your saved preferences still work.
     </div>
   );
 }

@@ -2,6 +2,17 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Sparkles,
+  ChevronLeft,
+  ChevronRight,
+  ChefHat,
+  Plus,
+  Sunrise,
+  Sun,
+  Moon,
+  UtensilsCrossed,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   addDays,
@@ -15,10 +26,10 @@ import {
 type Entry = { id: string; date: string; meal_type: string; title: string };
 type Cell = { id?: string; title: string };
 
-const MEALS: { type: string; label: string; icon: string }[] = [
-  { type: "breakfast", label: "Breakfast", icon: "🌅" },
-  { type: "lunch", label: "Lunch", icon: "☀️" },
-  { type: "dinner", label: "Dinner", icon: "🌙" },
+const MEALS = [
+  { type: "breakfast", label: "Breakfast", icon: Sunrise },
+  { type: "lunch", label: "Lunch", icon: Sun },
+  { type: "dinner", label: "Dinner", icon: Moon },
 ];
 
 const key = (date: string, meal: string) => `${date}|${meal}`;
@@ -36,9 +47,7 @@ export default function PlanClient({
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [cells, setCells] = useState<Record<string, Cell>>(() => {
     const map: Record<string, Cell> = {};
-    for (const e of initialEntries) {
-      map[key(e.date, e.meal_type)] = { id: e.id, title: e.title };
-    }
+    for (const e of initialEntries) map[key(e.date, e.meal_type)] = { id: e.id, title: e.title };
     return map;
   });
   const [generating, setGenerating] = useState(false);
@@ -53,22 +62,16 @@ export default function PlanClient({
   const today = new Date();
 
   const weekHasMeals = useMemo(
-    () =>
-      days.some((d) =>
-        MEALS.some((m) => cells[key(toISODate(d), m.type)]?.title),
-      ),
+    () => days.some((d) => MEALS.some((m) => cells[key(toISODate(d), m.type)]?.title)),
     [days, cells],
   );
 
   async function saveMeal(date: string, meal: string, title: string) {
     const k = key(date, meal);
     const trimmed = title.trim();
-
     if (!trimmed) {
       const existing = cells[k];
-      if (existing?.id) {
-        await supabase.from("meal_plans").delete().eq("id", existing.id);
-      }
+      if (existing?.id) await supabase.from("meal_plans").delete().eq("id", existing.id);
       setCells((c) => {
         const next = { ...c };
         delete next[k];
@@ -76,19 +79,13 @@ export default function PlanClient({
       });
       return;
     }
-
     setCells((c) => ({ ...c, [k]: { ...c[k], title: trimmed } }));
     const { data } = await supabase
       .from("meal_plans")
-      .upsert(
-        { user_id: userId, date, meal_type: meal, title: trimmed },
-        { onConflict: "user_id,date,meal_type" },
-      )
+      .upsert({ user_id: userId, date, meal_type: meal, title: trimmed }, { onConflict: "user_id,date,meal_type" })
       .select("id")
       .single();
-    if (data?.id) {
-      setCells((c) => ({ ...c, [k]: { id: data.id, title: trimmed } }));
-    }
+    if (data?.id) setCells((c) => ({ ...c, [k]: { id: data.id, title: trimmed } }));
   }
 
   async function autoPlan() {
@@ -102,7 +99,6 @@ export default function PlanClient({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not build a plan");
-
       const rows = (data.meals as { dayOffset: number; mealType: string; title: string }[])
         .filter((m) => m.dayOffset >= 0 && m.dayOffset < 7)
         .map((m) => ({
@@ -111,17 +107,13 @@ export default function PlanClient({
           meal_type: m.mealType.toLowerCase(),
           title: m.title,
         }));
-
       const { data: saved } = await supabase
         .from("meal_plans")
         .upsert(rows, { onConflict: "user_id,date,meal_type" })
         .select("id, date, meal_type, title");
-
       setCells((c) => {
         const next = { ...c };
-        for (const r of saved ?? []) {
-          next[key(r.date, r.meal_type)] = { id: r.id, title: r.title };
-        }
+        for (const r of saved ?? []) next[key(r.date, r.meal_type)] = { id: r.id, title: r.title };
         return next;
       });
     } catch (e) {
@@ -131,59 +123,52 @@ export default function PlanClient({
     }
   }
 
-  function cook(title: string) {
-    router.push(`/app/cook?q=${encodeURIComponent(title)}`);
-  }
-
+  const cook = (title: string) => router.push(`/app/cook?q=${encodeURIComponent(title)}`);
   const weekLabel = `${shortDate(days[0])} – ${shortDate(days[6])}`;
 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-extrabold text-stone-900 dark:text-stone-50">
-          Meal plan
-        </h1>
+        <div>
+          <span className="eyebrow">Meal plan</span>
+          <h1 className="mt-3 font-heading text-3xl font-bold text-foreground sm:text-4xl">
+            Your week
+          </h1>
+        </div>
         <button onClick={autoPlan} disabled={generating} className="btn-primary disabled:opacity-60">
-          {generating ? "Planning…" : "✨ Auto-plan this week"}
+          <Sparkles className="h-4 w-4" />
+          {generating ? "Planning…" : "Auto-plan this week"}
         </button>
       </div>
 
-      <div className="mt-4 flex items-center gap-3">
-        <button
-          onClick={() => setWeekStart((w) => addDays(w, -7))}
-          className="btn-secondary !px-4 !py-2"
-        >
-          ←
+      <div className="mt-5 flex items-center gap-2">
+        <button onClick={() => setWeekStart((w) => addDays(w, -7))} className="btn-secondary !px-3 !py-2">
+          <ChevronLeft className="h-4 w-4" />
         </button>
-        <span className="font-semibold text-stone-700 dark:text-stone-200">{weekLabel}</span>
-        <button
-          onClick={() => setWeekStart((w) => addDays(w, 7))}
-          className="btn-secondary !px-4 !py-2"
-        >
-          →
+        <span className="min-w-[7rem] text-center font-semibold text-foreground">{weekLabel}</span>
+        <button onClick={() => setWeekStart((w) => addDays(w, 7))} className="btn-secondary !px-3 !py-2">
+          <ChevronRight className="h-4 w-4" />
         </button>
-        <button
-          onClick={() => setWeekStart(startOfWeek(new Date()))}
-          className="text-sm text-stone-500 hover:underline"
-        >
+        <button onClick={() => setWeekStart(startOfWeek(new Date()))} className="btn-ghost !px-3 !py-2 text-sm">
           Today
         </button>
       </div>
 
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
 
       {!weekHasMeals && !generating && (
-        <div className="mt-5 rounded-3xl border-2 border-dashed border-stone-200 bg-stone-50 p-6 text-center dark:border-stone-700 dark:bg-stone-800/40">
-          <div className="text-3xl">🍽️</div>
-          <p className="mt-2 font-semibold text-stone-700 dark:text-stone-200">
+        <div className="mt-5 rounded-3xl border-2 border-dashed border-border bg-surface p-8 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary">
+            <UtensilsCrossed className="h-7 w-7" />
+          </div>
+          <p className="mt-3 font-heading font-semibold text-foreground">
             Nothing planned for this week yet
           </p>
-          <p className="mt-1 text-sm text-stone-500">
-            Let Rasoi build a balanced week for you, or tap any meal below to add
-            your own.
+          <p className="mt-1 text-sm text-muted-foreground">
+            Let Rasoi build a balanced week, or tap any meal below to add your own.
           </p>
           <button onClick={autoPlan} className="btn-primary mt-4">
-            ✨ Auto-plan this week
+            <Sparkles className="h-4 w-4" /> Auto-plan this week
           </button>
         </div>
       )}
@@ -193,20 +178,12 @@ export default function PlanClient({
           const iso = toISODate(day);
           const isToday = isSameDay(day, today);
           return (
-            <div
-              key={iso}
-              className={
-                "card !p-4 " +
-                (isToday ? "ring-2 ring-brand-300" : "")
-              }
-            >
+            <div key={iso} className={"card !p-4 " + (isToday ? "ring-2 ring-primary/40" : "")}>
               <div className="mb-3 flex items-baseline gap-2">
-                <span className="font-bold text-stone-900 dark:text-stone-100">
-                  {WEEKDAYS[i]}
-                </span>
-                <span className="text-sm text-stone-400">{shortDate(day)}</span>
+                <span className="font-heading font-bold text-foreground">{WEEKDAYS[i]}</span>
+                <span className="text-sm text-muted-foreground">{shortDate(day)}</span>
                 {isToday && (
-                  <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-700">
+                  <span className="rounded-full bg-primary-soft px-2 py-0.5 text-xs font-bold text-primary">
                     Today
                   </span>
                 )}
@@ -218,12 +195,9 @@ export default function PlanClient({
                   const cell = cells[k];
                   const isEditing = editing === k;
                   return (
-                    <div
-                      key={meal.type}
-                      className="rounded-2xl bg-stone-50 p-3 dark:bg-stone-800/50"
-                    >
-                      <div className="mb-1 text-xs font-medium text-stone-400">
-                        {meal.icon} {meal.label}
+                    <div key={meal.type} className="rounded-2xl bg-surface p-3">
+                      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                        <meal.icon className="h-3.5 w-3.5" /> {meal.label}
                       </div>
 
                       {isEditing ? (
@@ -243,7 +217,7 @@ export default function PlanClient({
                             if (e.key === "Escape") setEditing(null);
                           }}
                           placeholder="Dish name"
-                          className="w-full rounded-lg border border-stone-200 bg-white px-2 py-1 text-sm outline-none focus:border-brand-400 dark:border-stone-600 dark:bg-stone-800"
+                          className="w-full rounded-lg border border-border bg-card px-2 py-1 text-sm outline-none focus:border-primary/50"
                         />
                       ) : cell?.title ? (
                         <div>
@@ -252,20 +226,20 @@ export default function PlanClient({
                               setDraft(cell.title);
                               setEditing(k);
                             }}
-                            className="text-left text-sm font-medium text-stone-800 hover:text-brand-600 dark:text-stone-100"
+                            className="text-left text-sm font-semibold text-foreground hover:text-primary"
                           >
                             {cell.title}
                           </button>
-                          <div className="mt-1 flex gap-2">
+                          <div className="mt-1.5 flex gap-2">
                             <button
                               onClick={() => cook(cell.title)}
-                              className="text-xs font-semibold text-brand-600 hover:underline"
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
                             >
-                              🍳 Cook
+                              <ChefHat className="h-3.5 w-3.5" /> Cook
                             </button>
                             <button
                               onClick={() => saveMeal(iso, meal.type, "")}
-                              className="text-xs text-stone-400 hover:text-red-500"
+                              className="text-xs text-muted-foreground hover:text-destructive"
                             >
                               Clear
                             </button>
@@ -277,9 +251,9 @@ export default function PlanClient({
                             setDraft("");
                             setEditing(k);
                           }}
-                          className="text-sm text-stone-400 hover:text-brand-500"
+                          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary"
                         >
-                          + Add
+                          <Plus className="h-4 w-4" /> Add
                         </button>
                       )}
                     </div>

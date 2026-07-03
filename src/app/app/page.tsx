@@ -1,5 +1,44 @@
 import Link from "next/link";
+import {
+  Refrigerator,
+  Search,
+  CalendarDays,
+  Settings2,
+  ArrowRight,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { Reveal, RevealGroup, RevealItem } from "@/components/Reveal";
+
+const tiles = [
+  {
+    href: "/app/cook",
+    icon: Refrigerator,
+    title: "What's in the fridge?",
+    body: "Turn your ingredients into a recipe.",
+    tone: "primary" as const,
+  },
+  {
+    href: "/app/dish",
+    icon: Search,
+    title: "Find a dish",
+    body: "Type any dish name and get the full recipe.",
+    tone: "accent" as const,
+  },
+  {
+    href: "/app/plan",
+    icon: CalendarDays,
+    title: "Plan your meals",
+    body: "Build a balanced week in one tap.",
+    tone: "primary" as const,
+  },
+  {
+    href: "/app/profile",
+    icon: Settings2,
+    title: "Your preferences",
+    body: "Cuisines, diet, units, and voice.",
+    tone: "accent" as const,
+  },
+];
 
 export default async function Dashboard() {
   const supabase = await createClient();
@@ -12,34 +51,48 @@ export default async function Dashboard() {
     .eq("id", user!.id)
     .single();
 
-  const greeting = profile?.name ? `Hello, ${profile.name}` : "Hello there";
-
-  const tiles = [
-    { href: "/app/cook", icon: "🧊", title: "What's in the fridge?", body: "Turn your ingredients into a recipe." },
-    { href: "/app/plan", icon: "🗓️", title: "Plan your meals", body: "Build a balanced week or month." },
-    { href: "/app/profile", icon: "⚙️", title: "Your preferences", body: "Cuisines, diet, units, and voice." },
-  ];
+  const first = profile?.name?.split(" ")[0];
+  const hour = new Date().getHours();
+  const part = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   return (
     <div>
-      <h1 className="text-3xl font-extrabold text-stone-900 dark:text-stone-50">
-        {greeting} 👋
-      </h1>
-      <p className="mt-2 text-stone-500 dark:text-stone-400">
-        What would you like to do today?
-      </p>
+      <Reveal>
+        <p className="eyebrow">{part}</p>
+        <h1 className="mt-3 font-heading text-3xl font-bold text-foreground sm:text-4xl">
+          {first ? `Hello, ${first}` : "Hello there"}
+        </h1>
+        <p className="mt-2 text-muted-foreground">What would you like to cook today?</p>
+      </Reveal>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+      <RevealGroup className="mt-8 grid gap-4 sm:grid-cols-2">
         {tiles.map((t) => (
-          <Link key={t.href} href={t.href} className="card transition hover:shadow-md">
-            <div className="text-3xl">{t.icon}</div>
-            <div className="mt-3 text-lg font-bold text-stone-900 dark:text-stone-100">
-              {t.title}
-            </div>
-            <div className="text-stone-500 dark:text-stone-400">{t.body}</div>
-          </Link>
+          <RevealItem key={t.href}>
+            <Link
+              href={t.href}
+              className="group card flex h-full items-start gap-4 transition-all duration-300 hover:shadow-lift hover:-translate-y-1"
+            >
+              <div
+                className={
+                  "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl " +
+                  (t.tone === "primary"
+                    ? "bg-primary-soft text-primary"
+                    : "bg-accent-soft text-accent")
+                }
+              >
+                <t.icon className="h-6 w-6" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-1 font-heading text-lg font-semibold text-foreground">
+                  {t.title}
+                  <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" />
+                </div>
+                <p className="text-sm text-muted-foreground">{t.body}</p>
+              </div>
+            </Link>
+          </RevealItem>
         ))}
-      </div>
+      </RevealGroup>
     </div>
   );
 }

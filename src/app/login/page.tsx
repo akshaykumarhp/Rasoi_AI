@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { UtensilsCrossed, Mail, ArrowLeft, MailCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { Reveal } from "@/components/Reveal";
 
 export default function LoginPage() {
   const supabase = createClient();
@@ -35,72 +37,113 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6 py-12">
-      <Link
-        href="/"
-        className="mb-8 flex items-center gap-2 text-lg font-bold text-stone-900 dark:text-stone-100"
-      >
-        <span className="text-2xl">🍳</span> Rasoi Assistant
-      </Link>
-
-      <div className="card">
-        <h1 className="text-2xl font-extrabold text-stone-900 dark:text-stone-50">
-          Welcome
-        </h1>
-        <p className="mt-1 text-stone-500 dark:text-stone-400">
-          Sign in to cook, plan, and save your recipes.
-        </p>
-
-        <button
-          onClick={signInWithGoogle}
-          className="btn-secondary mt-6 w-full"
-          type="button"
-        >
-          <span className="text-lg">🇬</span> Continue with Google
-        </button>
-
-        <div className="my-5 flex items-center gap-3 text-sm text-stone-400">
-          <span className="h-px flex-1 bg-stone-200 dark:bg-stone-700" />
-          or
-          <span className="h-px flex-1 bg-stone-200 dark:bg-stone-700" />
-        </div>
-
-        {status === "sent" ? (
-          <div className="rounded-2xl bg-brand-50 p-4 text-center text-brand-800">
-            📬 Check <strong>{email}</strong> for a sign-in link.
-          </div>
-        ) : (
-          <form onSubmit={sendMagicLink} className="space-y-3">
-            <label className="block">
-              <span className="text-sm font-medium text-stone-600 dark:text-stone-300">
-                Email address
-              </span>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="mt-1 w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-base outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-200 dark:border-stone-700 dark:bg-stone-800"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={status === "sending"}
-              className="btn-primary w-full disabled:opacity-60"
-            >
-              {status === "sending" ? "Sending…" : "Email me a sign-in link"}
-            </button>
-            {status === "error" && (
-              <p className="text-sm text-red-600">{message}</p>
-            )}
-          </form>
-        )}
+    <main className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 py-12">
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute -left-20 top-10 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute -right-20 bottom-10 h-72 w-72 rounded-full bg-accent/10 blur-3xl" />
       </div>
 
-      <p className="mt-6 text-center text-sm text-stone-400">
-        No passwords. We&rsquo;ll email you a secure link.
-      </p>
+      <div className="w-full max-w-md">
+        <Link
+          href="/"
+          className="mb-8 inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground transition hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back home
+        </Link>
+
+        <Reveal>
+          <div className="card">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-hover shadow-soft">
+              <UtensilsCrossed className="h-6 w-6 text-white" />
+            </div>
+            <h1 className="mt-5 font-heading text-2xl font-bold text-foreground">
+              Welcome to Rasoi
+            </h1>
+            <p className="mt-1 text-muted-foreground">
+              Sign in to cook, plan, and save your recipes.
+            </p>
+
+            <button
+              onClick={signInWithGoogle}
+              type="button"
+              className="btn-secondary mt-6 w-full"
+            >
+              <GoogleIcon /> Continue with Google
+            </button>
+
+            <div className="my-5 flex items-center gap-3 text-sm text-muted-foreground">
+              <span className="h-px flex-1 bg-border" />
+              or
+              <span className="h-px flex-1 bg-border" />
+            </div>
+
+            {status === "sent" ? (
+              <div className="flex items-start gap-3 rounded-2xl bg-accent-soft p-4 text-sm text-foreground">
+                <MailCheck className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
+                <span>
+                  Check <strong>{email}</strong> for your secure sign-in link.
+                </span>
+              </div>
+            ) : (
+              <form onSubmit={sendMagicLink} className="space-y-3">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-semibold text-foreground">
+                    Email address
+                  </span>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="field pl-10"
+                    />
+                  </div>
+                </label>
+                <button
+                  type="submit"
+                  disabled={status === "sending"}
+                  className="btn-primary w-full disabled:opacity-60"
+                >
+                  {status === "sending" ? "Sending…" : "Email me a sign-in link"}
+                </button>
+                {status === "error" && (
+                  <p className="text-sm text-destructive">{message}</p>
+                )}
+              </form>
+            )}
+          </div>
+        </Reveal>
+
+        <p className="mt-6 text-center text-sm text-muted-foreground">
+          No passwords. We&rsquo;ll email you a secure link.
+        </p>
+      </div>
     </main>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.76h3.56c2.08-1.92 3.28-4.74 3.28-8.09z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.56-2.76c-.98.66-2.23 1.06-3.72 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.84 14.09a6.6 6.6 0 0 1 0-4.18V7.07H2.18a11 11 0 0 0 0 9.86l3.66-2.84z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"
+      />
+    </svg>
   );
 }

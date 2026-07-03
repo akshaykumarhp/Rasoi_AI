@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/types";
 import RecipeExperience from "@/components/RecipeExperience";
 
-export default async function CookPage() {
+export default async function DishPage() {
   const supabase = await createClient();
   const {
     data: { user },
@@ -20,5 +20,5 @@ export default async function CookPage() {
     voice_enabled: false,
   }) as Profile;
 
-  return <RecipeExperience profile={profile} mode="fridge" />;
+  return <RecipeExperience profile={profile} mode="dish" />;
 }
