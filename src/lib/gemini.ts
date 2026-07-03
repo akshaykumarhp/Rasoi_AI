@@ -38,15 +38,20 @@ export const AUDIO_MODELS: string[] = [
   "gemini-2.0-flash",
 ];
 
-/** True when an error is a rate-limit / quota-exhausted condition. */
+/** True when an error is retriable (rate-limit, quota, transient service, or model not found). */
 function isQuotaError(e: unknown): boolean {
   const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
   return (
     msg.includes("429") ||
+    msg.includes("503") ||
+    msg.includes("404") ||
     msg.includes("quota") ||
+    msg.includes("not found") ||
     msg.includes("resource_exhausted") ||
     msg.includes("rate limit") ||
-    msg.includes("exceeded")
+    msg.includes("exceeded") ||
+    msg.includes("high demand") ||
+    msg.includes("temporarily unavailable")
   );
 }
 
