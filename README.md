@@ -20,20 +20,24 @@ entirely on **free-tier** infrastructure.
 - **Supabase** — auth + Postgres (row-level security)
 
 ## Staying within the free tier
-Each free Gemini model has its own daily request quota, so the app **rotates
-through all of them** (`gemini-2.5-flash` → `-flash-lite` → `2.0-flash` → … ),
-skipping any that are rate-limited. This multiplies the effective requests-per-day
-at no cost. If *every* Gemini model is exhausted, it falls back to a **local
-Ollama** model (offline, unlimited):
+The app cascades through free LLMs so it (practically) never runs out — all $0:
 
-```bash
-# optional offline fallback
-ollama pull llama3.1     # then just keep `ollama serve` running
+```
+Gemini ×6 models  →  Groq  →  OpenRouter  →  GitHub Models  →  Ollama (local)
 ```
 
-No env changes needed — the app auto-detects Ollama at `localhost:11434`. Customize
-the rotation with `GEMINI_MODELS` or the fallback with `OLLAMA_MODEL` (see
-`.env.local.example`).
+1. **Gemini rotation** — each free Gemini model has its own daily quota, so the app
+   tries them in turn (`gemini-2.5-flash` → `-flash-lite` → `2.0-flash` → …),
+   skipping any that are rate-limited. ~6× the effective RPD for free.
+2. **Groq / OpenRouter / GitHub Models** — free OpenAI-compatible providers, each
+   enabled only when its API key is set. Add keys in `.env.local`.
+3. **Ollama** — final offline, unlimited fallback (`ollama pull llama3.1`, auto-detected
+   at `localhost:11434`).
+
+Get free keys: [Groq](https://console.groq.com/keys) ·
+[OpenRouter](https://openrouter.ai/keys) ·
+[GitHub Models](https://github.com/settings/tokens) (PAT with `models:read`).
+All models and the rotation order are configurable — see `.env.local.example`.
 
 ## Getting started
 ```bash

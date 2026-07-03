@@ -50,6 +50,95 @@ function isQuotaError(e: unknown): boolean {
   );
 }
 
+/** Parse JSON even when a model wraps it in prose or code fences. */
+function parseJSONLoose(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error("No JSON object found in model response");
+  }
+}
+
+/** An OpenAI-compatible chat-completions provider (Groq, OpenRouter, GitHub…). */
+interface OpenAIProvider {
+  name: string;
+  url: string; // full chat/completions endpoint
+  apiKey: string;
+  model: string;
+  extraHeaders?: Record<string, string>;
+}
+
+/** Free OpenAI-compatible providers, in fallback order. Only enabled when a key is set. */
+function openAIProviders(): OpenAIProvider[] {
+  const list: (OpenAIProvider | null)[] = [
+    process.env.GROQ_API_KEY
+      ? {
+          name: "Groq",
+          url: "https://api.groq.com/openai/v1/chat/completions",
+          apiKey: process.env.GROQ_API_KEY,
+          model: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
+        }
+      : null,
+    process.env.OPENROUTER_API_KEY
+      ? {
+          name: "OpenRouter",
+          url: "https://openrouter.ai/api/v1/chat/completions",
+          apiKey: process.env.OPENROUTER_API_KEY,
+          model:
+            process.env.OPENROUTER_MODEL ??
+            "meta-llama/llama-3.3-70b-instruct:free",
+          extraHeaders: { "X-Title": "Rasoi Assistant" },
+        }
+      : null,
+    process.env.GITHUB_MODELS_TOKEN
+      ? {
+          name: "GitHub Models",
+          url:
+            (process.env.GITHUB_MODELS_URL ??
+              "https://models.github.ai/inference") + "/chat/completions",
+          apiKey: process.env.GITHUB_MODELS_TOKEN,
+          model: process.env.GITHUB_MODEL ?? "openai/gpt-4o-mini",
+        }
+      : null,
+  ];
+  return list.filter((p): p is OpenAIProvider => p !== null);
+}
+
+/** Call an OpenAI-compatible provider and parse a JSON object from the reply. */
+async function callOpenAIJSON(
+  provider: OpenAIProvider,
+  system: string,
+  user: string,
+): Promise<unknown> {
+  const res = await fetch(provider.url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${provider.apiKey}`,
+      ...(provider.extraHeaders ?? {}),
+    },
+    body: JSON.stringify({
+      model: provider.model,
+      stream: false,
+      temperature: 0.7,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`${provider.name} request failed (${res.status})`);
+  }
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  return parseJSONLoose(data.choices?.[0]?.message?.content ?? "{}");
+}
+
 /** Local Ollama fallback (structured JSON) when all Gemini models are spent. */
 async function callOllamaJSON(system: string, user: string): Promise<unknown> {
   const url = process.env.OLLAMA_URL ?? "http://localhost:11434";
@@ -71,7 +160,7 @@ async function callOllamaJSON(system: string, user: string): Promise<unknown> {
     throw new Error(`Ollama request failed (${res.status})`);
   }
   const data = (await res.json()) as { message?: { content?: string } };
-  return JSON.parse(data.message?.content ?? "{}");
+  return parseJSONLoose(data.message?.content ?? "{}");
 }
 
 /**
@@ -109,13 +198,22 @@ async function generateJSONWithFallback(opts: {
     }
   }
 
-  // Every Gemini model is exhausted — try local Ollama.
-  console.warn("[llm] all Gemini models exhausted — falling back to Ollama");
+  // Gemini exhausted — try free OpenAI-compatible providers (Groq, OpenRouter, GitHub).
+  const userWithHint = `${opts.prompt}\n\nReturn ONLY valid JSON. ${opts.jsonHint}`;
+  for (const provider of openAIProviders()) {
+    try {
+      console.warn(`[llm] Gemini exhausted — trying ${provider.name}`);
+      return await callOpenAIJSON(provider, opts.system, userWithHint);
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[llm] ${provider.name} failed — trying next`);
+    }
+  }
+
+  // Finally, local Ollama (offline, unlimited).
+  console.warn("[llm] all cloud providers exhausted — falling back to Ollama");
   try {
-    return await callOllamaJSON(
-      opts.system,
-      `${opts.prompt}\n\nReturn ONLY valid JSON. ${opts.jsonHint}`,
-    );
+    return await callOllamaJSON(opts.system, userWithHint);
   } catch (ollamaErr) {
     console.error("[llm] Ollama fallback failed", ollamaErr);
     throw lastErr ?? ollamaErr;
